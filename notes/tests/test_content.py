@@ -5,27 +5,37 @@ from django.contrib.auth import get_user_model
 from notes.models import Note
 from notes.forms import NoteForm
 
-class TestNotesListForDifferentUsers(TestCase):
-
+class BaseNoteTestCase(TestCase):
     def setUp(self):
+        # Создаем пользователей
         self.author = get_user_model().objects.create_user(
             username='author',
             password='password123',
             email='author@example.com'
         )
-
+        
         self.not_author = get_user_model().objects.create_user(
             username='not_author',
             password='password123',
             email='not_author@example.com'
         )
-
+        
+        # Создаем заметку
         self.note = Note.objects.create(
             title='Test Note',
             text='This is a test note',
             author=self.author
         )
+        
+        # Авторизуем автора
+        self.client.force_login(self.author)
 
+    def tearDown(self):
+        self.note.delete()
+        self.author.delete()
+        self.not_author.delete()
+
+class TestNotesListForDifferentUsers(BaseNoteTestCase):
     def test_notes_list_for_different_users(self):
         test_cases = [
             (self.author, True),
@@ -40,30 +50,7 @@ class TestNotesListForDifferentUsers(TestCase):
                 object_list = response.context['object_list']
                 self.assertEqual(note_in_list, self.note in object_list)
 
-    def tearDown(self):
-        self.note.delete()
-        self.author.delete()
-        self.not_author.delete()
-
-
-class TestPagesContainForm(TestCase):
-
-    def setUp(self):
-        # Создаем автора и авторизуем его
-        self.author = get_user_model().objects.create_user(
-            username='author',
-            password='password123',
-            email='author@example.com'
-        )
-        self.client.force_login(self.author)
-
-        # Создаем заметку для редактирования
-        self.note = Note.objects.create(
-            title='Test Note',
-            text='This is a test note',
-            author=self.author
-        )
-
+class TestPagesContainForm(BaseNoteTestCase):
     def test_pages_contains_form(self):
         test_cases = [
             ('notes:add', None),
@@ -76,7 +63,3 @@ class TestPagesContainForm(TestCase):
                 response = self.client.get(url)
                 self.assertIn('form', response.context)
                 self.assertIsInstance(response.context['form'], NoteForm)
-
-    def tearDown(self):
-        self.note.delete()
-        self.author.delete()

@@ -12,21 +12,46 @@ from notes.forms import WARNING
 from pytils.translit import slugify
 
 
-class TestNoteCreation(TestCase):
-
+class BaseNoteTestCase(TestCase):
     def setUp(self):
+        super().setUp()
+        # Очищаем базу данных перед каждым тестом
+        Note.objects.all().delete()
+
+        # Создаем основного автора
         self.author = get_user_model().objects.create_user(
             username='author',
             password='password123',
             email='author@example.com'
         )
         self.client.force_login(self.author)
+        
+        # Базовые данные формы
         self.form_data = {
             'title': 'Test Note',
             'text': 'This is a test note',
             'slug': 'test-note'
         }
 
+    def create_note(self):
+        return Note.objects.create(
+            title='Test Note',
+            text='This is a test note',
+            slug='test-note',
+            author=self.author
+        )
+
+    def create_other_user(self):
+        return get_user_model().objects.create_user(
+            username='other_user',
+            password='password123',
+            email='other@example.com'
+        )
+
+    def tearDown(self):
+        self.author.delete()
+
+class TestNoteCreation(BaseNoteTestCase):
     def test_user_can_create_note(self):
         url = reverse('notes:add')
         response = self.client.post(url, data=self.form_data)
@@ -49,23 +74,13 @@ class TestNoteCreation(TestCase):
         self.assertEqual(Note.objects.count(), 0)
 
     def test_not_unique_slug(self):
-        # Создаем заметку для теста
-        note = Note.objects.create(
-            title='Existing Note',
-            text='Existing note text',
-            slug='existing-slug',
-            author=self.author
-        )
+        note = self.create_note()
 
         url = reverse('notes:add')
         self.form_data['slug'] = note.slug
         response = self.client.post(url, data=self.form_data)
-
-        # Проверяем, что форма есть в контексте
         self.assertIn('form', response.context)
         form = response.context['form']
-
-        # Проверяем ошибку формы
         self.assertIn('slug', form.errors)
         self.assertEqual(
             form.errors['slug'][0],
@@ -87,23 +102,10 @@ class TestNoteCreation(TestCase):
         self.assertEqual(new_note.slug, expected_slug)
 
 
-class TestNoteEditing(TestCase):
-
+class TestNoteEditing(BaseNoteTestCase):
     def setUp(self):
-        self.author = get_user_model().objects.create_user(
-            username='author',
-            password='password123',
-            email='author@example.com'
-        )
-        self.client.force_login(self.author)
-
-        self.note = Note.objects.create(
-            title='Test Note',
-            text='This is a test note',
-            slug='test-note',
-            author=self.author
-        )
-
+        super().setUp()
+        self.note = self.create_note()
         self.form_data = {
             'title': 'Updated Title',
             'text': 'Updated text',
@@ -121,12 +123,7 @@ class TestNoteEditing(TestCase):
         self.assertEqual(self.note.slug, self.form_data['slug'])
 
     def test_other_user_cant_edit_note(self):
-        # Создаем другого пользователя
-        other_user = get_user_model().objects.create_user(
-            username='other_user',
-            password='password123',
-            email='other@example.com'
-        )
+        other_user = self.create_other_user()
         other_client = Client()
         other_client.force_login(other_user)
 
@@ -139,22 +136,14 @@ class TestNoteEditing(TestCase):
         self.assertEqual(self.note.text, note_from_db.text)
         self.assertEqual(self.note.slug, note_from_db.slug)
 
-class TestNoteDeletion(TestCase):
+    def tearDown(self):
+        self.note.delete()
+        super().tearDown()
 
+class TestNoteDeletion(BaseNoteTestCase):
     def setUp(self):
-        self.author = get_user_model().objects.create_user(
-            username='author',
-            password='password123',
-            email='author@example.com'
-        )
-        self.client.force_login(self.author)
-
-        self.note = Note.objects.create(
-            title='Test Note',
-            text='This is a test note',
-            slug='test-note',
-            author=self.author
-        )
+        super().setUp()
+        self.note = self.create_note()
 
     def test_author_can_delete_note(self):
         url = reverse('notes:delete', args=(self.note.slug,))
@@ -163,15 +152,20 @@ class TestNoteDeletion(TestCase):
         self.assertEqual(Note.objects.count(), 0)
 
     def test_other_user_cant_delete_note(self):
-        # Создаем другого пользователя
-        other_user = get_user_model().objects.create_user(
-            username='other_user',
-            password='password123',
-            email='other@example.com'
-        )
+        other_user = self.create_other_user()
         other_client = Client()
-        other_client.force_login(other_user)
 
+        # Реализуем реальную авторизацию через POST-запрос
+        login_url = reverse('users:login')
+        login_response = other_client.post(login_url, {
+            'username': other_user.username,
+            'password': 'password123'
+        })
+
+        # Проверяем, что авторизация прошла успешно
+        self.assertEqual(login_response.status_code, 302)
+
+        # Пытаемся удалить заметку
         url = reverse('notes:delete', args=(self.note.slug,))
         response = other_client.post(url)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
@@ -179,4 +173,4 @@ class TestNoteDeletion(TestCase):
 
     def tearDown(self):
         self.note.delete()
-        self.author.delete()
+        super().tearDown()
