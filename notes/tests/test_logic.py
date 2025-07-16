@@ -1,13 +1,16 @@
+from http import HTTPStatus
+
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from django.http import HttpResponse
 from django.utils.http import urlencode
 from django.contrib.auth.models import AnonymousUser
+
 from notes.models import Note
 from notes.forms import WARNING
 from pytils.translit import slugify
-from http import HTTPStatus
+
 
 class TestNoteCreation(TestCase):
 

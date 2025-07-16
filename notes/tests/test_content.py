@@ -1,13 +1,13 @@
 from django.test import TestCase
 from django.urls import reverse
 from django.contrib.auth import get_user_model
+
 from notes.models import Note
 from notes.forms import NoteForm
 
 class TestNotesListForDifferentUsers(TestCase):
 
     def setUp(self):
-        # Создаем пользователей
         self.author = get_user_model().objects.create_user(
             username='author',
             password='password123',
@@ -20,7 +20,6 @@ class TestNotesListForDifferentUsers(TestCase):
             email='not_author@example.com'
         )
 
-        # Создаем заметку
         self.note = Note.objects.create(
             title='Test Note',
             text='This is a test note',
