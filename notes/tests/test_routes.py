@@ -1,155 +1,17 @@
 from http import HTTPStatus
 
-from django.test import Client, TestCase
+from django.test import Client
 from django.urls import reverse
-from django.contrib.auth import get_user_model
 
-from notes.models import Note
+from .test_utils.base_test_case import BaseNoteTestCase
 
-class TestAuthenticatedUserPages(TestCase):
 
+class TestRedirectsForAnonymousUsers(BaseNoteTestCase):
     def setUp(self):
-        # Создаем тестового пользователя
-        self.user = self.create_user()
-        # Авторизуем пользователя
-        self.client.force_login(self.user)
-
-    def create_user(self):
-        return get_user_model().objects.create_user(
-            username='testuser',
-            password='testpassword',
-            email='test@example.com'
-        )
-
-    def test_pages_availability_for_auth_user(self):
-        # Список URL-адресов для тестирования
-        urls = [
-            'notes:list',
-            'notes:add',
-            'notes:success'
-        ]
-
-        for name in urls:
-            with self.subTest(name=name):
-                url = reverse(name)
-                response = self.client.get(url)
-                self.assertEqual(response.status_code, HTTPStatus.OK)
-
-
-class TestAuthorPagesAvailability(TestCase):
-
-    def setUp(self):
-        # Создаем автора и авторизуем его
-        self.author = get_user_model().objects.create_user(
-            username='testauthor',
-            password='testpassword',
-            email='author@example.com'
-        )
-        self.client.force_login(self.author)
-
-        # Создаем тестовую заметку
-        self.note = Note.objects.create(
-            title='Test Note',
-            text='This is a test note',
-            author=self.author
-        )
-
-    def test_pages_availability_for_author(self):
-        # Список URL-адресов для тестирования
-        urls = [
-            'notes:detail',
-            'notes:edit',
-            'notes:delete'
-        ]
-
-        for name in urls:
-            with self.subTest(name=name):
-                url = reverse(name, args=(self.note.slug,))
-                response = self.client.get(url)
-                self.assertEqual(response.status_code, HTTPStatus.OK)
-
-    def test_note_creation(self):
-        # Проверяем, что заметка создана корректно
-        self.assertEqual(self.note.title, 'Test Note')
-        self.assertEqual(self.note.author, self.author)
-        self.assertTrue(self.note.slug)
-
-
-class TestPagesAvailabilityForDifferentUsers(TestCase):
-
-    def setUp(self):
-        # Создаем автора заметки
-        self.author = get_user_model().objects.create_user(
-            username='author',
-            password='password123',
-            email='author@example.com'
-        )
-
-        # Создаем другого пользователя
-        self.not_author = get_user_model().objects.create_user(
-            username='not_author',
-            password='password123',
-            email='not_author@example.com'
-        )
-
-        # Создаем тестовую заметку
-        self.note = Note.objects.create(
-            title='Test Note',
-            text='This is a test note',
-            author=self.author
-        )
-
-    def test_pages_availability(self):
-        # Определяем тестовые случаи
-        test_cases = [
-            (self.not_author, HTTPStatus.NOT_FOUND),
-            (self.author, HTTPStatus.OK)
-        ]
-
-        # Список URL-адресов для тестирования
-        urls = [
-            'notes:detail',
-            'notes:edit',
-            'notes:delete'
-        ]
-
-        for client, expected_status in test_cases:
-            # Авторизуем соответствующего пользователя
-            self.client.force_login(client)
-
-            for name in urls:
-                with self.subTest(client=client, name=name, expected_status=expected_status):
-                    url = reverse(name, args=(self.note.slug,))
-                    response = self.client.get(url)
-                    self.assertEqual(response.status_code, expected_status)
-
-    def test_note_creation(self):
-        # Проверяем корректность создания заметки
-        self.assertEqual(self.note.title, 'Test Note')
-        self.assertEqual(self.note.author, self.author)
-        self.assertTrue(self.note.slug)
-
-    def tearDown(self):
-        # Очищаем тестовые данные
-        self.note.delete()
-        self.author.delete()
-        self.not_author.delete()
-
-
-class TestRedirectsForAnonymousUsers(TestCase):
-
-    def setUp(self):
+        # Используем заметку из базового класса
+        super().setUp()
         # Создаем анонимного клиента
-        self.client = Client()
-        # Создаем тестовую заметку для получения slug
-        self.note = Note.objects.create(
-            title='Test Note',
-            text='This is a test note',
-            author=get_user_model().objects.create_user(
-                username='testuser',
-                password='testpassword'
-            )
-        )
+        self.anonymous_client = Client()
 
     def test_redirects(self):
         # Список тестовых случаев
@@ -168,7 +30,7 @@ class TestRedirectsForAnonymousUsers(TestCase):
                 url = reverse(name, args=[args] if args else [])
                 expected_url = f'{login_url}?next={url}'
 
-                response = self.client.get(url)
+                response = self.anonymous_client.get(url)
                 self.assertRedirects(
                     response,
                     expected_url,
@@ -176,11 +38,57 @@ class TestRedirectsForAnonymousUsers(TestCase):
                     target_status_code=200
                 )
 
-    def tearDown(self):
-        # Очищаем тестовые данные
-        self.note.delete()
+    def test_home_page_accessibility(self):
+        # Проверяем доступность домашней страницы для анонимного пользователя
+        url = reverse('notes:home')
+        response = self.anonymous_client.get(url)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
 
-    def test_user_is_anonymous(self):
-        # Проверяем, что пользователь действительно анонимный
-        self.assertIsInstance(self.client.session.get('_auth_user_id'), type(None))
-        self.assertEqual(self.client.session.get('_auth_user_backend'), None)
+
+class TestPagesAvailability(BaseNoteTestCase):
+    def test_basic_pages_availability(self):
+        # Проверяем базовые страницы для всех авторизованных пользователей
+        basic_urls = [
+            'notes:list',
+            'notes:add',
+            'notes:success'
+        ]
+
+        # Проверяем для обоих клиентов
+        for client in [self.author_client, self.not_author_client]:
+            with self.subTest(client=client):
+                for name in basic_urls:
+                    with self.subTest(name=name):
+                        url = reverse(name)
+                        response = client.get(url)
+                        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+    def test_note_specific_pages_availability(self):
+        # Определяем тестовые случаи для страниц конкретной заметки
+        test_cases = [
+            (self.not_author_client, HTTPStatus.NOT_FOUND),  # Клиент не-автора
+            (self.author_client, HTTPStatus.OK)  # Клиент автора
+        ]
+
+        note_specific_urls = [
+            'notes:detail',
+            'notes:edit',
+            'notes:delete'
+        ]
+
+        for client, expected_status in test_cases:
+            for name in note_specific_urls:
+                with self.subTest(
+                    client=client,
+                    name=name,
+                    expected_status=expected_status
+                ):
+                    url = reverse(name, args=(self.note.slug,))
+                    response = client.get(url)
+                    self.assertEqual(response.status_code, expected_status)
+
+    def test_note_creation(self):
+        # Проверяем корректность создания заметки
+        self.assertEqual(self.note.title, 'Test Note')
+        self.assertEqual(self.note.author, self.author)
+        self.assertTrue(self.note.slug)

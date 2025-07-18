@@ -1,54 +1,23 @@
-from django.test import TestCase
 from django.urls import reverse
-from django.contrib.auth import get_user_model
 
-from notes.models import Note
 from notes.forms import NoteForm
+from .test_utils.base_test_case import BaseNoteTestCase
 
-class BaseNoteTestCase(TestCase):
-    def setUp(self):
-        # Создаем пользователей
-        self.author = get_user_model().objects.create_user(
-            username='author',
-            password='password123',
-            email='author@example.com'
-        )
-        
-        self.not_author = get_user_model().objects.create_user(
-            username='not_author',
-            password='password123',
-            email='not_author@example.com'
-        )
-        
-        # Создаем заметку
-        self.note = Note.objects.create(
-            title='Test Note',
-            text='This is a test note',
-            author=self.author
-        )
-        
-        # Авторизуем автора
-        self.client.force_login(self.author)
-
-    def tearDown(self):
-        self.note.delete()
-        self.author.delete()
-        self.not_author.delete()
 
 class TestNotesListForDifferentUsers(BaseNoteTestCase):
     def test_notes_list_for_different_users(self):
         test_cases = [
-            (self.author, True),
-            (self.not_author, False)
+            (self.author_client, True),
+            (self.not_author_client, False)
         ]
 
-        for user, note_in_list in test_cases:
-            with self.subTest(user=user, note_in_list=note_in_list):
-                self.client.force_login(user)
+        for client, note_in_list in test_cases:
+            with self.subTest(client=client, note_in_list=note_in_list):
                 url = reverse('notes:list')
-                response = self.client.get(url)
+                response = client.get(url)
                 object_list = response.context['object_list']
                 self.assertEqual(note_in_list, self.note in object_list)
+
 
 class TestPagesContainForm(BaseNoteTestCase):
     def test_pages_contains_form(self):
